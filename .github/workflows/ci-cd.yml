@@ -1,0 +1,71 @@
+name: CI/CD Build-Push-Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_image: ${{ steps.push_backend.outputs.image }}
+      frontend_image: ${{ steps.push_frontend.outputs.image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push backend image
+        id: push_backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/budget_planner-backend:latest
+
+      - name: Build & push frontend image
+        id: push_frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/budget_planner-frontend:latest
+
+  deploy:
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            # ensure repo exists (clone if needed) and pull latest
+            if [ ! -d /home/${{ secrets.EC2_USER }}/Budget_planner ]; then
+              git clone https://github.com/${{ github.repository }} /home/${{ secrets.EC2_USER }}/Budget_planner
+            fi
+            cd /home/${{ secrets.EC2_USER }}/Budget_planner
+            git fetch --all
+            git reset --hard origin/main
+
+            # put production env file (you can create once manually on server instead)
+            # pull images and recreate services
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker system prune -f
