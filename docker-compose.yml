@@ -1,0 +1,40 @@
+version: "3.8"
+services:
+  mysql:
+    image: mysql:8
+    container_name: budget_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: budget_planner
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  backend:
+    build: ./backend
+    container_name: budget_backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASSWORD: Ujwala@123
+      DB_NAME: budget_planner
+      JWT_SECRET: secret123
+    depends_on:
+      - mysql
+
+  frontend:
+    build: ./frontend
+    container_name: budget_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
